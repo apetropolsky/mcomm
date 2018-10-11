@@ -35,7 +35,7 @@ def dict_creation(path):
         with open(filename, 'rb') as checkfile:
             for row in checkfile.readlines():
                 if check_binary(row):
-                    print "File %s seems like a binary, exit." % filename
+                    print "File %s seems like a binary, exit." % os.path.basename(filename)
                     sys.exit(1)
                
                 dict_orig[row].add(filename)
