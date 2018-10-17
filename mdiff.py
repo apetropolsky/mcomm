@@ -3,83 +3,106 @@
 
 import os
 import sys
-import ntpath
 import argparse
 
+from pprint import pprint
 from collections import defaultdict
 
-def diff_compute():
-# Function for compute different lines
-    print "Diff computing"
+TEXTCHARS = bytearray({7,8,9,10,12,13,27} | set(range(0x20, 0x100)) - {0x7f})
 
-def comm_compute():
+class ErrorWorker(Exception):
+    pass
+
+
+def include(keys, paths):
 # Function for compute common lines
-    print "Comm computing"
+
+    keys = [key for key in keys if all(path in key for path in paths)]
+    
+    return keys
+
+def exclude(keys, _exclude):
+# Function for compute exceptions
+
+    return [key for key in keys if all(path not in key for path in _exclude)]
+    
+def unique(keys, files):
+    
+    return [key for key in keys if len(key) == 1 and (not files or key[0] in files)]
+
 
 def check_binary(row):
-# Function for check type of file:
-# it check a string for existence of special 
-# characters which will not to be in plain text files.
-# Stackoverflow deepdive, in two words.
-    
-    textchars = bytearray({7,8,9,10,12,13,27} | set(range(0x20, 0x100)) - {0x7f})
-    is_binary = lambda bytes: bool(bytes.translate(None, textchars))
 
-    return is_binary(row)
+    return bool(row.translate(None, TEXTCHARS))
 
-def dict_creation(path):
+
+def dict_creation(paths):
     
     dict_orig = defaultdict(set)
 
-    for filename in path:
+    for filename in paths:
         with open(filename, 'rb') as checkfile:
             for row in checkfile.readlines():
                 if check_binary(row):
-                    print "File %s seems like a binary, exit." % os.path.basename(filename)
+                    print "File %s seems like a binary, exit." % \
+                            os.path.basename(filename)
                     sys.exit(1)
-               
-                dict_orig[row].add(filename)
+                
+                dict_orig[row.rstrip()].add(filename)
 
     dict_new = defaultdict(list)
     
     for k, v in dict_orig.iteritems():
         dict_new[tuple(v)].append(k)
-    
+
     return dict_new
         
+
 def main():
 
-    # Defining available arguments
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--comm", help="Common lines in all files", action="store_true")
-    parser.add_argument("-d", "--diff", help="Different lines in all files", action="store_true")
-    parser.add_argument("path", nargs='+', help="Path to files for comparison")
+    
+    parser.add_argument("path", nargs='+',
+                        help="paths to two or more files "
+                             "for comparison")
+
+    parser.add_argument("-e", "--exclude", nargs='+', 
+                        help="show common lines in all files, except "
+                             "lines in excluded files")
+
+    parser.add_argument("-u", "--unique", nargs='*',
+                        help="show unique lines for given files, "
+                             "for all if empty")
+    
     args = parser.parse_args()
 
-    if args.comm:
-        comm_compute()
+    paths = args.path[:]
+    paths.extend(args.exclude or [])
 
-    if args.diff:
-        diff_compute()
-
-    if len(args.path) == 1:
+    if len(paths) == 1:
         print "Please specify two or more files."
-        sys.exit(1)
+        return 1
 
-    result = dict_creation(args.path)
+    dict_full = dict_creation(paths)
+    keys = dict_full.keys()
 
-    from pprint import pprint
-    pprint(result)
+    if args.unique is not None:
+        keys = unique(keys, args.unique)    
+
+        for key in keys:
+            print 'Unique lines in %s:\n---' % key
+            print '\n'.join(dict_full[key])
+            print ''
         
+        return 0
 
-    # if args.path:
-    #     count = len(args.path)
-    #     if count > 2:
-    #         print "Too much arguments!"
-    #     else:
-    #         print count
-    # for file in args.path[0:]:
-    #   print file
+    keys = include(keys, args.path)
 
+    if args.exclude:
+        keys = exclude(keys, args.exclude)
+
+    print '\n'.join('\n'.join(dict_full[key]) for key in keys)
+        
 if __name__ == "__main__":
     main()
