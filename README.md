@@ -5,7 +5,7 @@
 
 Использование:
 
-mcomm <path1> <path2> <pathN> -e (path|number) -u (path|number)
+``mcomm <path1> <path2> <pathN> -e (path|number) -u (path|number)``
 
 Опции:
 
