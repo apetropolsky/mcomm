@@ -121,6 +121,8 @@ def main():
 
         keys = unique(keys, unique_list)    
 
+        print type(keys)
+
         for key in keys:
             print 'Unique lines in %s:\n---' % tuple(key)
             print '\n'.join(sorted(dict_full[key]))
