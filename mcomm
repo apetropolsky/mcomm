@@ -1,0 +1,126 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+
+import os
+import argparse
+
+from itertools import chain
+from collections import defaultdict
+
+TEXTCHARS = bytearray({7,8,9,10,12,13,27} | set(range(0x20, 0x100)) - {0x7f})
+
+class BinaryError(Exception):
+    pass
+
+
+def process(keys, include, exclude):
+    return [key for key in keys if key >= include and not (key & exclude)]
+    
+
+def unique(keys, files):
+    
+    return [key for key in keys if len(key) == 1 and \
+            (not files or key[0] in files)]
+
+
+def check_binary(row):
+
+    return bool(row.translate(None, TEXTCHARS))
+
+
+def dict_creation(paths):
+    
+    dict_orig = defaultdict(set)
+
+    for filename in paths:
+        with open(filename, 'rb') as checkfile:
+            counter = 0
+            for row in checkfile.readlines():
+                while counter < 150:
+                    if check_binary(row):
+                        raise BinaryError("File %s seems like a binary, "
+                            "exit." % os.path.basename(filename))
+
+                    counter += len(row)
+
+                dict_orig[row.rstrip('\n')].add(filename)
+    
+    dict_new = defaultdict(list)
+
+    while dict_orig:
+        k, v = dict_orig.popitem()
+        dict_new[frozenset(v)].append(k)        
+
+    return dict_new
+        
+
+def main():
+
+
+    parser = argparse.ArgumentParser()
+    
+    parser.add_argument("path", nargs='+',
+                        help="paths to two or more files "
+                             "for comparison")
+
+    parser.add_argument("-e", "--exclude", nargs='+', 
+                        help="show common lines in all files, "
+                             "except lines from excluded files")
+
+    parser.add_argument("-u", "--unique", nargs='*',
+                        help="show unique lines for given files, "
+                             "for all if empty")
+    
+    args = parser.parse_args()
+
+    paths = args.path[:]
+
+    exclude_list = set()
+    
+    for arg in args.exclude or []:
+        if not (arg.isdigit() and 0 < int(arg) <= len(paths)):
+            exclude_list.add(arg)
+            continue
+
+        if os.path.isfile(arg):
+            print "%s: it is file or sequence?" % arg
+            return 1
+        else: 
+            arg = paths[int(arg)-1]
+            exclude_list.add(arg)
+
+    print exclude_list
+    paths.extend(exclude_list)
+    paths = set(paths)
+
+    if len(paths) == 1:
+        print "Please specify two or more files."
+        return 1
+
+    try:
+        dict_full = dict_creation(paths)
+    except BinaryError as e:
+        print e
+        return 1
+
+    keys = dict_full.keys()
+
+    if args.unique is not None:
+        keys = unique(keys, args.unique)    
+
+        for key in keys:
+            print 'Unique lines in %s:\n---' % key
+            print '\n'.join(sorted(dict_full[key]))
+            print ''
+        
+        return 0
+
+    print keys
+
+    keys = process(keys, paths - exclude_list, exclude_list)
+
+    print '\n'.join(sorted(chain.from_iterable(dict_full[key] \
+                for key in keys)))
+
+if __name__ == "__main__":
+    main()
