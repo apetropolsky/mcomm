@@ -20,12 +20,29 @@ def process(keys, include, exclude):
 def unique(keys, files):
     
     return [key for key in keys if len(key) == 1 and \
-            (not files or key[0] in files)]
+            (not files or key & files)]
 
 
 def check_binary(row):
 
     return bool(row.translate(None, TEXTCHARS))
+
+
+def check_existence(args, paths):
+    file_list = set()
+    for arg in args:
+        if not (arg.isdigit() and 0 < int(arg) <= len(paths)):
+            file_list.add(arg)
+            continue
+
+        if os.path.isfile(arg):
+            print "%s: it is file or sequence?" % arg
+            return 1
+        else: 
+            arg = paths[int(arg)-1]
+            file_list.add(arg)
+    return file_list
+
 
 
 def dict_creation(paths):
@@ -65,33 +82,26 @@ def main():
 
     parser.add_argument("-e", "--exclude", nargs='+', 
                         help="show common lines in all files, "
-                             "except lines from excluded files")
+                             "except lines from excluded files. "
+                             "You can specify file by path or "
+                             "by sequence number")
 
     parser.add_argument("-u", "--unique", nargs='*',
                         help="show unique lines for given files, "
-                             "for all if empty")
+                             "for all if empty. "
+                             "You can specify file by path or "
+                             "by sequence number")
     
     args = parser.parse_args()
 
     paths = args.path[:]
-
-    exclude_list = set()
     
-    for arg in args.exclude or []:
-        if not (arg.isdigit() and 0 < int(arg) <= len(paths)):
-            exclude_list.add(arg)
-            continue
+    exclude_list = set()
 
-        if os.path.isfile(arg):
-            print "%s: it is file or sequence?" % arg
-            return 1
-        else: 
-            arg = paths[int(arg)-1]
-            exclude_list.add(arg)
+    if args.exclude or []:
+        exclude_list = check_existence(args.exclude, paths)
 
-    print exclude_list
     paths.extend(exclude_list)
-    paths = set(paths)
 
     if len(paths) == 1:
         print "Please specify two or more files."
@@ -106,17 +116,19 @@ def main():
     keys = dict_full.keys()
 
     if args.unique is not None:
-        keys = unique(keys, args.unique)    
+        
+        unique_list = check_existence(args.unique, paths)
+
+        keys = unique(keys, unique_list)    
 
         for key in keys:
-            print 'Unique lines in %s:\n---' % key
+            print 'Unique lines in %s:\n---' % tuple(key)
             print '\n'.join(sorted(dict_full[key]))
             print ''
         
         return 0
 
-    print keys
-
+    paths = set(paths)
     keys = process(keys, paths - exclude_list, exclude_list)
 
     print '\n'.join(sorted(chain.from_iterable(dict_full[key] \
