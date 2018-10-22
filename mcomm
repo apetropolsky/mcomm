@@ -13,36 +13,49 @@ class BinaryError(Exception):
     pass
 
 
+class MisleadingArg(Exception):
+    pass
+
+
+class ExistenceError(Exception):
+    pass
+
+
 def process(keys, include, exclude):
     return [key for key in keys if key >= include and not (key & exclude)]
     
-
-def unique(keys, files):
-    
-    return [key for key in keys if len(key) == 1 and \
-            (not files or key & files)]
-
 
 def check_binary(row):
 
     return bool(row.translate(None, TEXTCHARS))
 
 
-def check_existence(args, paths):
-    file_list = set()
+def match_args(args, paths):
+    file_list = []
     for arg in args:
         if not (arg.isdigit() and 0 < int(arg) <= len(paths)):
-            file_list.add(arg)
+            file_list.append(arg)
             continue
 
         if os.path.isfile(arg):
-            print "%s: it is file or sequence?" % arg
-            return 1
+            raise MisleadingArg("%s: it is file or sequence number?" % arg)
         else: 
             arg = paths[int(arg)-1]
-            file_list.add(arg)
+            file_list.append(arg)
+
     return file_list
 
+
+def check_existence(files):
+    file_list = []
+    for file in files:
+        if os.path.isfile(file):
+            file_list.append(file)
+        else:
+            raise ExistenceError("File %s seems like non-existent "
+                                 "and not in sequence." % file)
+
+    return file_list
 
 
 def dict_creation(paths):
@@ -94,21 +107,47 @@ def main():
     
     args = parser.parse_args()
 
-    paths = args.path[:]
-    
-    exclude_list = set()
+    path_list = args.path[:]
 
-    if args.exclude or []:
-        exclude_list = check_existence(args.exclude, paths)
 
-    paths.extend(exclude_list)
+    if args.exclude:
+        try:
+            exclude_list = match_args(args.exclude, path_list)
+        except MisleadingArg as e:
+            print e
+            return 1
+    else:
+        exclude_list = []
 
-    if len(paths) == 1:
+    unique_list = []
+
+    if args.unique:
+        try:
+            unique_list = match_args(args.unique, path_list)
+            path_list.extend(unique_list)
+        except MisleadingArg as e:
+            print e
+            return 1
+
+
+    path_list.extend(exclude_list)
+
+  
+    if len(path_list) == 1:
         print "Please specify two or more files."
         return 1
+    else:
+        try:
+            path_list = check_existence(path_list)
+        except ExistenceError as e:
+            print e
+            return 1
+
+    path_set = set(path_list)
+    exclude_set = set(exclude_list)
 
     try:
-        dict_full = dict_creation(paths)
+        dict_full = dict_creation(path_set)
     except BinaryError as e:
         print e
         return 1
@@ -116,22 +155,20 @@ def main():
     keys = dict_full.keys()
 
     if args.unique is not None:
+
+        if not unique_list:
         
-        unique_list = check_existence(args.unique, paths)
+            unique_list = [path for path in path_list 
+                           if path not in exclude_set]
 
-        keys = unique(keys, unique_list)    
-
-        print type(keys)
-
-        for key in keys:
-            print 'Unique lines in %s:\n---' % tuple(key)
-            print '\n'.join(sorted(dict_full[key]))
+        for file in unique_list:
+            print 'Unique lines in %s:\n---' % file
+            print '\n'.join(sorted(dict_full[frozenset([file])]))
             print ''
-        
+    
         return 0
 
-    paths = set(paths)
-    keys = process(keys, paths - exclude_list, exclude_list)
+    keys = process(keys, path_set - exclude_set, exclude_set)
 
     print '\n'.join(sorted(chain.from_iterable(dict_full[key] \
                 for key in keys)))
