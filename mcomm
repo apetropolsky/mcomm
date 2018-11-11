@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import argparse
 
 from itertools import chain
@@ -22,12 +23,14 @@ class ExistenceError(Exception):
 
 
 def process(keys, include, exclude):
-    return [key for key in keys if key >= include and not (key & exclude)]
-    
+    return (key for key in keys if key >= include and not (key & exclude))
 
-def check_binary(row):
 
-    return bool(row.translate(None, TEXTCHARS))
+def check_binary(row, filename):
+    if row.translate(None, TEXTCHARS):
+        raise BinaryError("File %s seems like a binary, "
+                            "exit." % filename)
+    return True
 
 
 def match_args(args, paths):
@@ -38,7 +41,7 @@ def match_args(args, paths):
             continue
 
         if os.path.isfile(arg):
-            raise MisleadingArg("%s: it is file or sequence number?" % arg)
+            raise MisleadingArg("%s: it is a file or a sequence number?" % arg)
         else: 
             arg = paths[int(arg)-1]
             file_list.append(arg)
@@ -58,28 +61,27 @@ def check_existence(files):
     return file_list
 
 
-def dict_creation(paths):
+def dict_creation(paths, regex):
     
     dict_orig = defaultdict(set)
 
     for filename in paths:
+        basename = os.path.basename(filename)
         with open(filename, 'rb') as checkfile:
             counter = 0
             for row in checkfile.readlines():
-                while counter < 150:
-                    if check_binary(row):
-                        raise BinaryError("File %s seems like a binary, "
-                            "exit." % os.path.basename(filename))
-
+                if counter < 150 and check_binary(row, basename):
                     counter += len(row)
 
-                dict_orig[row.rstrip('\n')].add(filename)
+                if re.search(regex, row) is not None:
+
+                    dict_orig[row.rstrip('\n')].add(filename)
     
     dict_new = defaultdict(list)
 
     while dict_orig:
         k, v = dict_orig.popitem()
-        dict_new[frozenset(v)].append(k)        
+        dict_new[frozenset(v)].append(k)
 
     return dict_new
         
@@ -104,23 +106,26 @@ def main():
                              "for all if empty. "
                              "You can specify file by path or "
                              "by sequence number")
+
+
+    parser.add_argument("-r", "--regex", help="apply an regex for every "
+                        "string of files")
     
     args = parser.parse_args()
 
     path_list = args.path[:]
 
-
+    exclude_list = []
     if args.exclude:
         try:
             exclude_list = match_args(args.exclude, path_list)
+            path_list.extend(exclude_list)
         except MisleadingArg as e:
             print e
             return 1
-    else:
-        exclude_list = []
+
 
     unique_list = []
-
     if args.unique:
         try:
             unique_list = match_args(args.unique, path_list)
@@ -128,9 +133,6 @@ def main():
         except MisleadingArg as e:
             print e
             return 1
-
-
-    path_list.extend(exclude_list)
 
   
     if len(path_list) == 1:
@@ -146,20 +148,25 @@ def main():
     path_set = set(path_list)
     exclude_set = set(exclude_list)
 
-    try:
-        dict_full = dict_creation(path_set)
-    except BinaryError as e:
-        print e
-        return 1
+    if args.regex:
+        try:
+            dict_full = dict_creation(path_set, args.regex)
+        except BinaryError as e:
+            print e
+            return 1
+    else:
+        try:
+            dict_full = dict_creation(path_set, "")
+        except BinaryError as e:
+            print e
+            return 1
 
     keys = dict_full.keys()
 
     if args.unique is not None:
-
         if not unique_list:
-        
-            unique_list = [path for path in path_list 
-                           if path not in exclude_set]
+            unique_list = (path for path in path_list 
+                           if path not in exclude_set)
 
         for file in unique_list:
             print 'Unique lines in %s:\n---' % file
